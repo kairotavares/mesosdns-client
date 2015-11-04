@@ -1,6 +1,10 @@
 # mesosdns-client
 A NPM package that resolves Mesos service URLs to actual host/port endpoints.
 
+## Installation
+
+This package can be installed via running `npm install mesosdns-client --save`.
+
 ## Options
 
 The following options are available:
