@@ -1,6 +1,6 @@
 {
   "name": "mesosdns-client",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "A http.Agent which makes it possible to consume Mesos DNS service resources by simply using the service URLs",
   "main": "index.js",
   "scripts": {

@@ -199,8 +199,6 @@ MesosDNSClient.prototype.get = function (serviceName, options, callback) {
         }
     }
 
-    console.log("_portIndex: " + _portIndex);
-
     // Check if a URL containing the specific Mesos domain is requested
     if (serviceName.indexOf(this.mesosTLD) > -1) {
 
