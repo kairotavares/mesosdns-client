@@ -1,7 +1,7 @@
 {
   "name": "mesosdns-client",
-  "version": "0.2.1",
-  "description": "A http.Agent which makes it possible to consume Mesos DNS service resources by simply using the service URLs",
+  "version": "0.2.2",
+  "description": "A simple client for Mesos DNS which makes it possible to receive actual endpoints from Mesos service names",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
