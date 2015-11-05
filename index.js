@@ -1,19 +1,42 @@
-var ndns = require('native-dns'),
+var util = require('util'),
+    ndns = require('native-dns'),
     DnsServerProvider = require('./lib/DNSServerProvider');
 
 var internals = {};
 
+// Sort numbers
 internals.compareNumbers = function compareNumbers(a, b) {
     a = parseInt(a, 10);
     b = parseInt(b, 10);
     return (a < b ? -1 : (a > b ? 1 : 0));
 };
 
-internals.checkBoolean = function checkBoolean(bool) {
+// Sort address objects by port
+internals.byPort = function byPort(a,b) {
+    if (a.port < b.port)
+        return -1;
+    if (a.port > b.port)
+        return 1;
+    return 0;
+};
+
+// Check if passed value is an object
+internals.isObject = function isObject(item) {
+    return (typeof item === "object" && !Array.isArray(item) && item !== null);
+};
+
+// Check if passed value is an object
+internals.isFunction = function isObject(item) {
+    return util.isFunction(item);
+};
+
+// Verify if passed value is a Boolean
+internals.isBoolean = function isBoolean(bool) {
     return typeof bool === 'boolean' ||
         (typeof bool === 'object' && typeof bool.valueOf() === 'boolean');
 };
 
+// Select a random entry from the address array
 internals.random = function random(addrs) {
     var temp = [];
     temp.push(addrs[Math.floor(Math.random()*addrs.length)]);
@@ -29,7 +52,6 @@ internals.groupSrvRecords = function groupSrvRecords(addrs) {
         if (!groups.hasOwnProperty(addr.priority)) {
             groups[addr.priority] = [];
         }
-
         groups[addr.priority].push(addr);
     });
 
@@ -79,6 +101,7 @@ var MesosDNSClient = function MesosDNSClient(options) {
     this.healthCheckInterval = 10000;
     this.useEvents = false;
     this.strategy = internals.groupSrvRecords;
+    this.defaultPortIndex = 0; // Use the first entry by default
 
     // The cache object is used to provide a fallback if the DNS server
     // health check has not yet removed a failed DNS server from the list of available DNS servers
@@ -92,6 +115,10 @@ var MesosDNSClient = function MesosDNSClient(options) {
         this.dnsTimeout = options['dnsTimeout'];
     }
 
+    if (options && options.hasOwnProperty('defaultPortIndex')) {
+        this.defaultPortIndex = options['defaultPortIndex'];
+    }
+
     if (options && options.hasOwnProperty('strategy')) {
         if (options["strategy"].toLowerCase() === "random") {
             this.strategy = internals.random;
@@ -102,7 +129,7 @@ var MesosDNSClient = function MesosDNSClient(options) {
         }
     }
 
-    if (options && options.hasOwnProperty('healthCheckEnabled') && internals.checkBoolean(options['healthCheckEnabled'])) {
+    if (options && options.hasOwnProperty('healthCheckEnabled') && internals.isBoolean(options['healthCheckEnabled'])) {
         this.healthCheckEnabled = options['healthCheckEnabled'];
     }
 
@@ -132,7 +159,7 @@ var MesosDNSClient = function MesosDNSClient(options) {
         }
     }
 
-    //Activate events
+    // Activate events
     if (this.dnsServerProvider && this.useEvents) {
         this.dnsServerProvider.on('addServer', function(ip){
             console.log(new Date().getTime() + ': Added ' + ip + ' Now online: ' + JSON.stringify(this.availableDnsServers));
@@ -153,24 +180,42 @@ var MesosDNSClient = function MesosDNSClient(options) {
 
 };
 
-MesosDNSClient.prototype.get = function (hostname, callback) {
-    var self = this;
+MesosDNSClient.prototype.get = function (serviceName, options, callback) {
+    var self = this,
+        _callback = null,
+        _portIndex = null;
 
-    //Check if a URL containing the specific Mesos domain is requested
-    if (hostname.indexOf(this.mesosTLD) > -1) {
+    if (arguments.length === 2 && internals.isFunction(arguments[1])) {
+        _callback = arguments[1];
+        // Set portIndex to default
+        _portIndex = self.defaultPortIndex;
+    } else if (arguments.length === 3 && internals.isFunction(arguments[2])) {
+        _callback = arguments[2];
+        // Check if second argument is object and contains the portIndex property
+        if (internals.isObject(arguments[1]) && arguments[1].hasOwnProperty("portIndex")) {
+            _portIndex = arguments[1]["portIndex"];
+        } else {
+            _portIndex = self.defaultPortIndex;
+        }
+    }
 
-        self.resolve(hostname, function(err, services, timing) {
+    console.log("_portIndex: " + _portIndex);
+
+    // Check if a URL containing the specific Mesos domain is requested
+    if (serviceName.indexOf(this.mesosTLD) > -1) {
+
+        self.resolve(serviceName, _portIndex, function(err, services, timing) {
 
             var _services = [];
 
             if (err || services.length === 0) {
-                // Lookup hostname in the cache
-                if (self.cache.hasOwnProperty(hostname)) {
+                // Lookup serviceName in the cache
+                if (self.cache.hasOwnProperty(serviceName)) {
                     // If found, use it
-                    _services = self.cache[hostname];
+                    _services = self.cache[serviceName];
                 } else {
                     // Return error
-                    callback({
+                    _callback({
                         "message": err
                     }, null);
                 }
@@ -178,29 +223,35 @@ MesosDNSClient.prototype.get = function (hostname, callback) {
                 // Set local services array
                 _services = services;
                 // Update cache
-                self.cache[hostname] = services;
+                self.cache[serviceName] = services;
             }
 
             var endpoints = self.strategy(_services);
 
-            callback(null, {
-                hostname: hostname,
-                endpoint: endpoints[0].host + ":" + endpoints[0].port,
-                host: endpoints[0].host,
-                port: endpoints[0].port,
-                allEndpoints: endpoints,
-                took: timing
-            })
+            if (endpoints.length > 0) {
+                _callback(null, {
+                    serviceName: serviceName,
+                    endpoint: endpoints[0].host + ":" + endpoints[0].port,
+                    host: endpoints[0].host,
+                    port: endpoints[0].port,
+                    allEndpoints: endpoints,
+                    took: timing
+                });
+            } else {
+                _callback({
+                    "message": "The service " + serviceName + " couldn't by found in the Mesos DNS. Check if it exists."
+                }, null);
+            }
 
         });
 
-    //If not, just forward
+    // If not, just forward
     } else {
-        callback({
-            "message": "The hostname " + hostname + " doesn't contain a valid TLD."
+        _callback({
+            "message": "The serviceName " + serviceName + " doesn't contain a valid TLD."
         }, {
-            hostname: hostname,
-            address: hostname,
+            serviceName: serviceName,
+            address: serviceName,
             all: [],
             took: 0
         });
@@ -208,7 +259,7 @@ MesosDNSClient.prototype.get = function (hostname, callback) {
 
 };
 
-MesosDNSClient.prototype.resolve = function(hostname, callback) {
+MesosDNSClient.prototype.resolve = function(hostname, portIndex, callback) {
     var self = this;
     var question = ndns.Question({
         name: self.getServiceName(hostname),
@@ -232,21 +283,35 @@ MesosDNSClient.prototype.resolve = function(hostname, callback) {
 
     req.on('message', function (err, answer) {
         if (err) {
-            //callback(err, null);
             self.dnsServerProvider.removeDnsServer(dnsServer);
-            self.resolve.call(self, hostname, callback);
+            self.resolve.call(self, hostname, portIndex, callback);
         }
 
-        //Standard SRV records (hostname, priority and weight)
+        // Standard SRV records (hostname, priority and weight)
         answer.answer.forEach(function (a) {
-            mapping[a.target] = {
-                port: a.port,
-                priority: a.priority,
-                weight: 10 //Use same weight
-            };
+
+            if (mapping[a.target] && mapping[a.target].endpoints) {
+                // Add endpoint
+                mapping[a.target].endpoints.push({
+                    port: a.port,
+                    priority: a.priority,
+                    weight: 10 //Use same weight
+                });
+            } else {
+                // Create mapping entry
+                mapping[a.target] = {
+                    host: null,
+                    endpoints: [{
+                        port: a.port,
+                        priority: a.priority,
+                        weight: 10 //Use same weight
+                    }]
+                }
+            }
+
         });
 
-        //Special case for Mesos DNS: It returns the A records  for each SRV record hostname as well in the additional section
+        // Special case for Mesos DNS: It returns the A records  for each SRV record hostname as well in the additional section
         answer.additional.forEach(function (a) {
             if (mapping[a.name]) {
                 mapping[a.name].host = a.address;
@@ -256,10 +321,26 @@ MesosDNSClient.prototype.resolve = function(hostname, callback) {
     });
 
     req.on('end', function () {
-        //From "HashMap" to array
         var services = [];
+        // From dictionary to array
         Object.getOwnPropertyNames(mapping).forEach(function(service) {
-            services.push(mapping[service]);
+
+            // Sort by port (it's already sorted by host!)
+            var sortedEndpoints = mapping[service].endpoints.sort(internals.byPort);
+
+            // Check portIndex constraint validity, fallback to first entry in case it's greater then the returned endpoints' length
+            var index = 0;
+            if (portIndex <= sortedEndpoints.length-1) {
+                index = portIndex;
+            }
+
+            // Construct final object
+            var chosenEndpoint = sortedEndpoints[index];
+            chosenEndpoint.host = mapping[service].host;
+
+            // Push to services array
+            services.push(chosenEndpoint);
+
         });
         callback(null, services, ((Date.now()) - start).toString());
     });
