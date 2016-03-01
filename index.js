@@ -270,7 +270,7 @@ MesosDNSClient.prototype.resolve = function(hostname, portIndex, callback) {
 
     var req = ndns.Request({
         question: question,
-        server: { address: dnsServer, port: 53, type: 'udp' },
+        server: { address: dnsServer, port: 53, type: 'tcp' },
         timeout: self.dnsTimeout
     });
 
