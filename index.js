@@ -349,7 +349,7 @@ MesosDNSClient.prototype.resolve = function(hostname, portIndex, callback) {
 
         var services = [];
 
-        if (mapping[hostname].type === "SRV") {
+        if (questionObj.type === "SRV") {
 
             // From dictionary to array
             Object.getOwnPropertyNames(mapping).forEach(function(service) {
