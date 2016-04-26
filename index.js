@@ -229,7 +229,8 @@ MesosDNSClient.prototype.get = function (serviceName, options, callback) {
             if (endpoints.length > 0) {
                 _callback(null, {
                     serviceName: serviceName,
-                    endpoint: endpoints[0].host + ":" + endpoints[0].port,
+                    endpoint: endpoints[0].host + (endpoints[0].hasOwnProperty("port") ? ":" + endpoints[0].port : ""),
+                    //endpoint: endpoints[0].host + ":" + endpoints[0].port,
                     host: endpoints[0].host,
                     port: endpoints[0].port,
                     allEndpoints: endpoints,
@@ -259,10 +260,8 @@ MesosDNSClient.prototype.get = function (serviceName, options, callback) {
 
 MesosDNSClient.prototype.resolve = function(hostname, portIndex, callback) {
     var self = this;
-    var question = ndns.Question({
-        name: self.getServiceName(hostname),
-        type: 'SRV'
-    });
+    var questionObj = self.getQuestionObject(hostname);
+    var question = ndns.Question(questionObj);
 
     var start = Date.now();
     var mapping = {};
@@ -280,77 +279,125 @@ MesosDNSClient.prototype.resolve = function(hostname, portIndex, callback) {
     });
 
     req.on('message', function (err, answer) {
+
         if (err) {
             self.dnsServerProvider.removeDnsServer(dnsServer);
             self.resolve.call(self, hostname, portIndex, callback);
         }
 
-        // Standard SRV records (hostname, priority and weight)
-        answer.answer.forEach(function (a) {
+        if (questionObj.type === "SRV") {
+            // Standard SRV records (hostname, priority and weight)
+            answer.answer.forEach(function (a) {
 
-            if (mapping[a.target] && mapping[a.target].endpoints) {
-                // Add endpoint
-                mapping[a.target].endpoints.push({
-                    port: a.port,
-                    priority: a.priority,
-                    weight: 10 //Use same weight
-                });
-            } else {
-                // Create mapping entry
-                mapping[a.target] = {
-                    host: null,
-                    endpoints: [{
+                if (mapping[a.target] && mapping[a.target].endpoints) {
+                    // Add endpoint
+                    mapping[a.target].endpoints.push({
                         port: a.port,
                         priority: a.priority,
                         weight: 10 //Use same weight
-                    }]
+                    });
+                } else {
+                    // Create mapping entry
+                    mapping[a.target] = {
+                        host: null,
+                        type: questionObj.type,
+                        endpoints: [{
+                            port: a.port,
+                            priority: a.priority,
+                            weight: 10 //Use same weight
+                        }]
+                    }
                 }
-            }
 
-        });
+            });
 
-        // Special case for Mesos DNS: It returns the A records  for each SRV record hostname as well in the additional section
-        answer.additional.forEach(function (a) {
-            if (mapping[a.name]) {
-                mapping[a.name].host = a.address;
-            }
-        });
+            // Special case for Mesos DNS: It returns the A records  for each SRV record hostname as well in the additional section
+            answer.additional.forEach(function (a) {
+                if (mapping[a.name]) {
+                    mapping[a.name].host = a.address;
+                }
+            });
+        } else {
+            // A record
+            answer.answer.forEach(function (a) {
+
+                if (mapping[a.name] && mapping[a.name].endpoints) {
+                    // Add endpoint
+                    mapping[a.name].endpoints.push({
+                        host: a.address,
+                        weight: 10 //Use same weight
+                    });
+                } else {
+                    // Create mapping entry
+                    mapping[a.name] = {
+                        host: a.address,
+                        type: questionObj.type,
+                        endpoints: [{
+                            host: a.address,
+                            weight: 10 //Use same weight
+                        }]
+                    }
+                }
+
+            });
+        }
+
 
     });
 
     req.on('end', function () {
+
         var services = [];
-        // From dictionary to array
-        Object.getOwnPropertyNames(mapping).forEach(function(service) {
 
-            // Sort by port (it's already sorted by host!)
-            var sortedEndpoints = mapping[service].endpoints.sort(internals.byPort);
+        if (mapping[hostname].type === "SRV") {
 
-            // Check portIndex constraint validity, fallback to first entry in case it's greater then the returned endpoints' length
-            var index = 0;
-            if (portIndex <= sortedEndpoints.length-1) {
-                index = portIndex;
-            }
+            // From dictionary to array
+            Object.getOwnPropertyNames(mapping).forEach(function(service) {
 
-            // Construct final object
-            var chosenEndpoint = sortedEndpoints[index];
-            chosenEndpoint.host = mapping[service].host;
+                // Sort by port (it's already sorted by host!)
+                var sortedEndpoints = mapping[service].endpoints.sort(internals.byPort);
 
-            // Push to services array
-            services.push(chosenEndpoint);
+                // Check portIndex constraint validity, fallback to first entry in case it's greater then the returned endpoints' length
+                var index = 0;
+                if (portIndex <= sortedEndpoints.length-1) {
+                    index = portIndex;
+                }
 
-        });
-        callback(null, services, ((Date.now()) - start).toString());
+                // Construct final object
+                var chosenEndpoint = sortedEndpoints[index];
+                chosenEndpoint.host = mapping[service].host;
+
+                // Push to services array
+                services.push(chosenEndpoint);
+
+            });
+
+            callback(null, services, ((Date.now()) - start).toString());
+
+        } else {
+
+            callback(null, mapping[hostname].endpoints, ((Date.now()) - start).toString());
+
+        }
+
+
     });
 
     req.send();
 
 };
 
-MesosDNSClient.prototype.getServiceName = function(host) {
+MesosDNSClient.prototype.getQuestionObject = function(host) {
+    var resultObj = {};
     var parts = host.split('\.');
-    var requestAddress = '_' + parts.shift() + '._tcp.' + parts.join('.');
-    return requestAddress;
+    if (parts && parts.length === 2) {
+        resultObj.name = host;
+        resultObj.type = "A";
+    } else {
+        resultObj.name = '_' + parts.shift() + '._tcp.' + parts.join('.');
+        resultObj.type = "SRV";
+    }
+    return resultObj;
 };
 
 module.exports = MesosDNSClient;

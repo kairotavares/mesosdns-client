@@ -25,7 +25,7 @@ and Mesos DNS runs on the servers `192.168.0.100`, `192.168.0.101` and `192.168.
 
 ### Basic usage
 
-```
+```javascript
 var MesosDNSClient = require("mesosdns-client");
 
 var options = {
@@ -51,11 +51,17 @@ The complete addressInfo is: {"hostname":"web.marathon.mesos","endpoint":"192.16
 The endpoint is: "192.168.200.168:31302"
 ```
 
+If the requested hostname/service is a basic service, such as `leader.mesos`, the `MesosDNSClient` will resolve the A record instead of the SRV record. The output will then look like this:
+
+```javascript
+{"serviceName": "master.mesos", "endpoint": "192.168.0.101", "host": "192.168.0.101", "allEndpoints": [{"host":"192.168.0.101"}, {"host":"192.168.0.102"}, {"host":"192.168.0.103"}], "took":"11"}
+```
+
 ### Advanced usage
 
 If you want to query services which open more than one port (i.e. a specific port), you can use the `options` object of the `get()` to specify the `portIndex` property (starting with `0`):
 
-```
+```javascript
 client.get("web.marathon.mesos", { portIndex: 1 }, function(error, addressInfo) {
     if (error) console.log(JSON.stringify(error));
     
