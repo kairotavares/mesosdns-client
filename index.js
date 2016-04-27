@@ -1,6 +1,6 @@
-var util = require('util'),
-    ndns = require('native-dns'),
-    DnsServerProvider = require('./lib/DNSServerProvider');
+var util = require("util"),
+    ndns = require("native-dns"),
+    DnsServerProvider = require("./lib/DNSServerProvider");
 
 var internals = {};
 
@@ -32,8 +32,8 @@ internals.isFunction = function isObject(item) {
 
 // Verify if passed value is a Boolean
 internals.isBoolean = function isBoolean(bool) {
-    return typeof bool === 'boolean' ||
-        (typeof bool === 'object' && typeof bool.valueOf() === 'boolean');
+    return typeof bool === "boolean" ||
+        (typeof bool === "object" && typeof bool.valueOf() === "boolean");
 };
 
 // Select a random entry from the address array
@@ -95,31 +95,32 @@ internals.groupSrvRecords = function groupSrvRecords(addrs) {
 var MesosDNSClient = function MesosDNSClient(options) {
 
     this.dnsServerProvider = null;
-    this.mesosTLD = '.mesos';
+    this.mesosTLD = ".mesos";
     this.dnsTimeout = 1000;
     this.healthCheckEnabled = false;
     this.healthCheckInterval = 10000;
     this.useEvents = false;
     this.strategy = internals.groupSrvRecords;
     this.defaultPortIndex = 0; // Use the first entry by default
+    this.errorMessage = null;
 
     // The cache object is used to provide a fallback if the DNS server
     // health check has not yet removed a failed DNS server from the list of available DNS servers
     this.cache = {};
 
-    if (options && options.hasOwnProperty('mesosTLD')) {
-        this.mesosTLD = options['mesosTLD'];
+    if (options && options.hasOwnProperty("mesosTLD")) {
+        this.mesosTLD = options["mesosTLD"];
     }
 
-    if (options && options.hasOwnProperty('dnsTimeout')) {
-        this.dnsTimeout = options['dnsTimeout'];
+    if (options && options.hasOwnProperty("dnsTimeout")) {
+        this.dnsTimeout = options["dnsTimeout"];
     }
 
-    if (options && options.hasOwnProperty('defaultPortIndex')) {
-        this.defaultPortIndex = options['defaultPortIndex'];
+    if (options && options.hasOwnProperty("defaultPortIndex")) {
+        this.defaultPortIndex = options["defaultPortIndex"];
     }
 
-    if (options && options.hasOwnProperty('strategy')) {
+    if (options && options.hasOwnProperty("strategy")) {
         if (options["strategy"].toLowerCase() === "random") {
             this.strategy = internals.random;
         } else if (options["strategy"].toLowerCase() === "weighted") {
@@ -129,52 +130,54 @@ var MesosDNSClient = function MesosDNSClient(options) {
         }
     }
 
-    if (options && options.hasOwnProperty('healthCheckEnabled') && internals.isBoolean(options['healthCheckEnabled'])) {
-        this.healthCheckEnabled = options['healthCheckEnabled'];
+    if (options && options.hasOwnProperty("healthCheckEnabled") && internals.isBoolean(options["healthCheckEnabled"])) {
+        this.healthCheckEnabled = options["healthCheckEnabled"];
     }
 
-    if (options && options.hasOwnProperty('healthCheckInterval')) {
-        this.healthCheckInterval = options['healthCheckInterval'];
+    if (options && options.hasOwnProperty("healthCheckInterval")) {
+        this.healthCheckInterval = options["healthCheckInterval"];
     }
 
-    if (options && options.hasOwnProperty('useEvents') && (options['useEvents'] === true || options['useEvents'] === false)) {
-        this.useEvents = options['useEvents'];
+    if (options && options.hasOwnProperty("useEvents") && (options["useEvents"] === true || options["useEvents"] === false)) {
+        this.useEvents = options["useEvents"];
     }
 
-    if (options && options.hasOwnProperty('dnsServers')) {
+    if (options && options.hasOwnProperty("dnsServers")) {
         var dnsServers = null;
-        if (typeof options['dnsServers'] === 'string') {
-            dnsServers = new Array(options['dnsServers']);
+        if (typeof options["dnsServers"] === "string") {
+            dnsServers = new Array(options["dnsServers"]);
         }
-        if (Array.isArray(options['dnsServers'])) {
-            dnsServers = options['dnsServers'];
+        if (Array.isArray(options["dnsServers"])) {
+            dnsServers = options["dnsServers"];
         }
-        if (dnsServers) {
+        if (dnsServers && dnsServers.length > 0) {
             this.dnsServerProvider = new DnsServerProvider({
                 dnsServers: dnsServers,
                 healthCheckEnabled: this.healthCheckEnabled,
                 healthCheckInterval: this.healthCheckInterval,
                 dnsTimeout: this.dnsTimeout
             });
+        } else {
+            this.errorMessage = "No DNS servers provided!";
         }
     }
 
     // Activate events
     if (this.dnsServerProvider && this.useEvents) {
-        this.dnsServerProvider.on('addServer', function(ip){
-            console.log(new Date().getTime() + ': Added ' + ip + ' Now online: ' + JSON.stringify(this.availableDnsServers));
+        this.dnsServerProvider.on("addServer", function(ip){
+            console.log(new Date().getTime() + ": Added " + ip + " Now online: " + JSON.stringify(this.availableDnsServers));
         });
 
-        this.dnsServerProvider.on('removeServer', function(ip){
-            console.log(new Date().getTime() + ': Removed ' + ip + ' Now online: ' + JSON.stringify(this.availableDnsServers));
+        this.dnsServerProvider.on("removeServer", function(ip){
+            console.log(new Date().getTime() + ": Removed " + ip + " Now online: " + JSON.stringify(this.availableDnsServers));
         });
 
-        this.dnsServerProvider.on('timeout', function(ip){
-            console.log(new Date().getTime() + ': Timeout ' + ip);
+        this.dnsServerProvider.on("timeout", function(ip){
+            console.log(new Date().getTime() + ": Timeout " + ip);
         });
 
-        this.dnsServerProvider.on('error', function(message){
-            console.log(new Date().getTime() + ': Error ' + message.error + ' from ' + message.dnsServerIp);
+        this.dnsServerProvider.on("error", function(message){
+            console.log(new Date().getTime() + ": Error " + message.error + " from " + message.dnsServerIp);
         });
     }
 
@@ -197,6 +200,11 @@ MesosDNSClient.prototype.get = function (serviceName, options, callback) {
         } else {
             _portIndex = self.defaultPortIndex;
         }
+    }
+
+    // Check if an initialization error exists
+    if (self.errorMessage) {
+        _callback(self.errorMessage, null);
     }
 
     // Check if a URL containing the specific Mesos domain is requested
@@ -266,23 +274,31 @@ MesosDNSClient.prototype.resolve = function(hostname, portIndex, callback) {
     var start = Date.now();
     var mapping = {};
     var dnsServer = self.dnsServerProvider.getDnsServer();
+    var resolveError = null;
 
     var req = ndns.Request({
         question: question,
-        server: { address: dnsServer, port: 53, type: 'tcp' },
+        server: { address: dnsServer, port: 53, type: "tcp" },
         timeout: self.dnsTimeout
     });
 
-    req.on('timeout', function () {
-        self.dnsServerProvider.removeDnsServer(dnsServer);
-        callback('Timeout in making request', null);
+    req.on("error", function (error) {
+        resolveError = error;
     });
 
-    req.on('message', function (err, answer) {
+    req.on("timeout", function () {
+        resolveError = "Timeout in making request";
+    });
 
-        if (err) {
+    req.on("message", function (error, answer) {
+
+        if (error) {
             self.dnsServerProvider.removeDnsServer(dnsServer);
             self.resolve.call(self, hostname, portIndex, callback);
+        }
+
+        if (answer.answer.length === 0) {
+            resolveError = "The DNS answer was empty";
         }
 
         if (questionObj.type === "SRV") {
@@ -345,41 +361,49 @@ MesosDNSClient.prototype.resolve = function(hostname, portIndex, callback) {
 
     });
 
-    req.on('end', function () {
+    req.on("end", function () {
 
         var services = [];
 
-        if (questionObj.type === "SRV") {
+        // Check if we have a result at all
+        if (Object.getOwnPropertyNames(mapping).length === 0) {
 
-            // From dictionary to array
-            Object.getOwnPropertyNames(mapping).forEach(function(service) {
-
-                // Sort by port (it's already sorted by host!)
-                var sortedEndpoints = mapping[service].endpoints.sort(internals.byPort);
-
-                // Check portIndex constraint validity, fallback to first entry in case it's greater then the returned endpoints' length
-                var index = 0;
-                if (portIndex <= sortedEndpoints.length-1) {
-                    index = portIndex;
-                }
-
-                // Construct final object
-                var chosenEndpoint = sortedEndpoints[index];
-                chosenEndpoint.host = mapping[service].host;
-
-                // Push to services array
-                services.push(chosenEndpoint);
-
-            });
-
-            callback(null, services, ((Date.now()) - start).toString());
+            callback((resolveError || "The DNS answer was empty"), null);
 
         } else {
 
-            callback(null, mapping[hostname].endpoints, ((Date.now()) - start).toString());
+            if (questionObj.type === "SRV") {
+
+                // From dictionary to array
+                Object.getOwnPropertyNames(mapping).forEach(function(service) {
+
+                    // Sort by port (it's already sorted by host!)
+                    var sortedEndpoints = mapping[service].endpoints.sort(internals.byPort);
+
+                    // Check portIndex constraint validity, fallback to first entry in case it's greater then the returned endpoints' length
+                    var index = 0;
+                    if (portIndex <= sortedEndpoints.length-1) {
+                        index = portIndex;
+                    }
+
+                    // Construct final object
+                    var chosenEndpoint = sortedEndpoints[index];
+                    chosenEndpoint.host = mapping[service].host;
+
+                    // Push to services array
+                    services.push(chosenEndpoint);
+
+                });
+
+                callback(null, services, ((Date.now()) - start).toString());
+
+            } else {
+
+                callback(null, mapping[hostname].endpoints, ((Date.now()) - start).toString());
+
+            }
 
         }
-
 
     });
 
@@ -389,12 +413,12 @@ MesosDNSClient.prototype.resolve = function(hostname, portIndex, callback) {
 
 MesosDNSClient.prototype.getQuestionObject = function(host) {
     var resultObj = {};
-    var parts = host.split('\.');
+    var parts = host.split("\.");
     if (parts && parts.length === 2) {
         resultObj.name = host;
         resultObj.type = "A";
     } else {
-        resultObj.name = '_' + parts.shift() + '._tcp.' + parts.join('.');
+        resultObj.name = "_" + parts.shift() + "._tcp." + parts.join(".");
         resultObj.type = "SRV";
     }
     return resultObj;

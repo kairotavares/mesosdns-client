@@ -1,6 +1,6 @@
 {
   "name": "mesosdns-client",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "A simple client for Mesos DNS which makes it possible to receive actual endpoints from Mesos service names",
   "main": "index.js",
   "scripts": {
