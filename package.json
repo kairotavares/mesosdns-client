@@ -28,6 +28,6 @@
   },
   "homepage": "https://github.com/tobilg/mesosdns-client",
   "dependencies": {
-    "native-dns": "^0.7.0"
+    "native-dns": "git+https://git@github.com/kairotavares/node-dns#v0.7.1"
   }
 }
